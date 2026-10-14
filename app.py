@@ -13,6 +13,9 @@ from flask import Flask, request, redirect, render_template_string
 # 后面所有 @app.route(...) 这种"网址→函数"的绑定，都挂在这个 app 上
 app = Flask(__name__)
 
+# v2：版本常量，显示在页面右上角徽标，方便核对线上跑的是不是 v2
+VERSION = "v2.0"
+
 # ===================== 第2段：数据库连接信息（从环境变量读，不写死） =====================
 # os.environ.get("环境变量名", "默认值") 的含义：
 #   先去系统的环境变量里找这个名字；找不到，就用冒号后面的"默认值"
@@ -53,35 +56,53 @@ def init_db():
 init_db()  # 程序一启动就执行上面的建表函数，确保表一定存在
 
 # ===================== 第5段：网页模板（一段 HTML 字符串） =====================
-# 这是用户用浏览器看到的页面长什么样：上面一个"添加表单"，下面一个"待办列表"
+# v2 改动：加了蓝色顶栏 + 右上角版本徽标 + 待办统计行，整页外观与 v1 明显区分，便于验收
 # {{ }} 和 {% %} 是 Jinja2 模板语法（Flask 自带）：
-#   {{ t[1] }} 表示把变量 t 的第2个元素（标题）显示出来
+#   {{ version }} / {{ total }} / {{ done }} 是 Python 传进来的变量
 #   {% for t in tasks %} ... {% endfor %} 表示把 tasks 里的每一条循环显示出来
 #   t[0]=id, t[1]=title, t[2]=done（和 SQL 查出来的列顺序对应）
 PAGE = """
 <!doctype html>
-<html><body>
-<h1>我的待办，冒烟测试</h1>
-<form method="post" action="/add">
-  <input name="title" placeholder="写点什么..." required>
-  <button>添加</button>
-</form>
-<ul>
-{% for t in tasks %}
-  <li>
-    {% if t[2] %}<s>{{ t[1] }}</s>{% else %}{{ t[1] }}{% endif %}
-    <a href="/toggle/{{ t[0] }}">[完成]</a>
-    <a href="/delete/{{ t[0] }}">[删除]</a>
-  </li>
-{% endfor %}
-</ul>
+<html><head><meta charset="utf-8"><style>
+  body{font-family:system-ui,sans-serif;margin:0;background:#f5f7fa;color:#222}
+  header{background:#2b6cb0;color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center}
+  header h1{margin:0;font-size:20px}
+  .ver{background:#fff;color:#2b6cb0;border-radius:12px;padding:2px 10px;font-size:13px;font-weight:bold}
+  main{max-width:640px;margin:24px auto;padding:0 16px}
+  .stat{color:#666;font-size:14px;margin-bottom:12px}
+  input{padding:8px;border:1px solid #ccc;border-radius:6px;width:70%}
+  button{background:#2b6cb0;color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer}
+  ul{list-style:none;padding:0}
+  li{background:#fff;margin:8px 0;padding:10px 14px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  a{color:#2b6cb0;text-decoration:none;margin-left:8px}
+</style></head>
+<body>
+<header><h1>待办清单</h1><span class="ver">{{ version }}</span></header>
+<main>
+  <p class="stat">共 {{ total }} 条，已完成 {{ done }} 条</p>
+  <form method="post" action="/add">
+    <input name="title" placeholder="写点什么..." required>
+    <button>添加</button>
+  </form>
+  <ul>
+  {% for t in tasks %}
+    <li>
+      <span>{% if t[2] %}<s>{{ t[1] }}</s>{% else %}{{ t[1] }}{% endif %}</span>
+      <span>
+        <a href="/toggle/{{ t[0] }}">[完成]</a>
+        <a href="/delete/{{ t[0] }}">[删除]</a>
+      </span>
+    </li>
+  {% endfor %}
+  </ul>
+</main>
 </body></html>
 """
 
 # ===================== 第6段：四个路由 = 对应"增删改查" =====================
 # 路由：@app.route("网址") 的意思是"用户访问这个网址时，就执行下面的函数"
 
-# 【查】访问首页 "/"，列出所有待办
+# 【查】访问首页 "/"，列出所有待办（v2：顺带算总数与已完成数，传给模板）
 @app.route("/")
 def index():
     conn = get_conn()                    # 开连接
@@ -89,8 +110,9 @@ def index():
     cur.execute("SELECT id, title, done FROM tasks ORDER BY id DESC")  # 查全部，按 id 倒序（新的在前）
     tasks = cur.fetchall()               # 取出所有结果（一个 list，每条是一行数据）
     conn.close()                         # 关连接
-    # 把查到的 tasks 填进 PAGE 模板，生成网页返回给浏览器
-    return render_template_string(PAGE, tasks=tasks)
+    done = sum(1 for t in tasks if t[2]) # v2：统计已完成条数
+    # 把查到的 tasks 和版本/计数填进 PAGE 模板，生成网页返回给浏览器
+    return render_template_string(PAGE, tasks=tasks, version=VERSION, total=len(tasks), done=done)
 
 # 【增】用户提交表单到 "/add"（POST 方式），往表里插入一条待办
 @app.route("/add", methods=["POST"])
