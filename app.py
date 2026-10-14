@@ -61,7 +61,7 @@ init_db()  # 程序一启动就执行上面的建表函数，确保表一定存�
 PAGE = """
 <!doctype html>
 <html><body>
-<h1>我的待办</h1>
+<h1>我的待办，冒烟测试</h1>
 <form method="post" action="/add">
   <input name="title" placeholder="写点什么..." required>
   <button>添加</button>
